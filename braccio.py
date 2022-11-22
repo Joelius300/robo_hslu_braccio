@@ -13,6 +13,14 @@ def _validate_angle(value: Optional[int]):
         raise ValueError(f"Invalid angle: {value}")
 
 
+def _validate_grip(value: Optional[int]):
+    if value is None:
+        return
+
+    if type(value) is not int or value < 10 or value > 73:
+        raise ValueError(f"Invalid grip strength: {value}")
+
+
 class Braccio:
     key_mappings = {
         'base': 'b',
@@ -39,7 +47,7 @@ class Braccio:
              elbow: Optional[int] = None,
              wrist_tilt: Optional[int] = None,
              wrist_rotate: Optional[int] = None,
-             grip=False) -> None:
+             grip: Optional[int] = None) -> None:
         """
         Sets the specified angles of the Braccio joints over the Arduino.
         """
@@ -49,6 +57,7 @@ class Braccio:
         _validate_angle(elbow)
         _validate_angle(wrist_tilt)
         _validate_angle(wrist_rotate)
+        _validate_grip(grip)
 
         self._send(base=base, shoulder=shoulder,
                    elbow=elbow, wrist_tilt=wrist_tilt,
@@ -59,16 +68,15 @@ class Braccio:
         print("Sending:", payload)
         payload += '\r\n'
 
-        return self._port.write(payload.encode())
+        return self._port.write(payload.encode('ASCII'))
 
     def _build_payload(self, **kwargs):
         payload = ''
         for key, value in kwargs.items():
-            if value is not None and value is not False:  # if it's a boolean False (or None), we don't write anything
+            if value is not None:
+                payload += f'{value} '
                 key = self.key_mappings[key]
                 payload += f'{key} '
-                if value is not True:  # if it's a boolean True, we don't want to add it (it's just a flag then)
-                    payload += f'{value} '
 
         return payload.rstrip()
 
@@ -82,11 +90,11 @@ class Braccio:
 if __name__ == '__main__':
     port = serial.serial_for_url("loop://", timeout=.1)  # testing
     # port = "COM4"  # windows
-    # port = "/dev/ttyUSB0"  # linux
+    # port = "/dev/ttyACM0"  # linux
     with Braccio(port) as braccio:
-        braccio.send(base=1, shoulder=4, wrist_tilt=6, grip=True)
+        braccio.send(base=1, shoulder=4, wrist_tilt=6, grip=10)
         braccio.send(base=100, shoulder=100, elbow=359, wrist_tilt=0, wrist_rotate=50)
 
         if isinstance(port, RawIOBase):
             print("Dumping received data on port:")
-            print(port.readall().decode())
+            print(port.readall().decode('ASCII'))
