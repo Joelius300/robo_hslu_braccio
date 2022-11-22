@@ -5,20 +5,11 @@ import serial
 from serial import Serial
 
 
-def _validate_angle(value: Optional[int]):
-    if value is None:
-        return
+def _transform_mm_to_grip(mm: Optional[int]):
+    if mm is None:
+        return None
 
-    if type(value) is not int or value < 0 or value >= 360:
-        raise ValueError(f"Invalid angle: {value}")
-
-
-def _validate_grip(value: Optional[int]):
-    if value is None:
-        return
-
-    if type(value) is not int or value < 10 or value > 73:
-        raise ValueError(f"Invalid grip strength: {value}")
+    return max(73 - mm, 10)
 
 
 class Braccio:
@@ -47,36 +38,35 @@ class Braccio:
              elbow: Optional[int] = None,
              wrist_tilt: Optional[int] = None,
              wrist_rotate: Optional[int] = None,
-             grip: Optional[int] = None) -> None:
+             grip: Optional[int] = None) -> int:
         """
         Sets the specified angles of the Braccio joints over the Arduino.
+
+        Note, the grip is passed as mm distance of the inner claw. To grip something of a certain width, you'll
+        need to clamp 10-15mm tighter because they are flexible and don't hold the object if it matches the width.
         """
 
-        _validate_angle(base)
-        _validate_angle(shoulder)
-        _validate_angle(elbow)
-        _validate_angle(wrist_tilt)
-        _validate_angle(wrist_rotate)
-        _validate_grip(grip)
+        grip = _transform_mm_to_grip(grip)
 
-        self._send(base=base, shoulder=shoulder,
-                   elbow=elbow, wrist_tilt=wrist_tilt,
-                   wrist_rotate=wrist_rotate, grip=grip)
+        return self._send(base=base, shoulder=shoulder,
+                          elbow=elbow, wrist_tilt=wrist_tilt,
+                          wrist_rotate=wrist_rotate, grip=grip)
 
     def _send(self, **kwargs) -> int:
         payload = self._build_payload(**kwargs)
         print("Sending:", payload)
         payload += '\r\n'
+        b = payload.encode('ASCII')
+        print("Bytes:", b.hex())
 
-        return self._port.write(payload.encode('ASCII'))
+        return self._port.write(b)
 
     def _build_payload(self, **kwargs):
         payload = ''
         for key, value in kwargs.items():
             if value is not None:
                 payload += f'{value} '
-                key = self.key_mappings[key]
-                payload += f'{key} '
+                payload += f'{self.key_mappings[key]} '
 
         return payload.rstrip()
 
