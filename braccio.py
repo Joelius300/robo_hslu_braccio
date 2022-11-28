@@ -13,7 +13,7 @@ def _transform_mm_to_grip(mm: Optional[int]):
 
 
 class Braccio:
-    key_mappings = {
+    KEY_MAPPINGS = {
         'base': 'b',
         'shoulder': 's',
         'elbow': 'e',
@@ -21,6 +21,27 @@ class Braccio:
         'wrist_rotate': 'w',
         'grip': 'g'
     }
+
+    ANGLE_CORRECTIONS = {
+        'base': -90,
+        'shoulder': -90,
+        'elbow': -90,
+        'wrist_tilt': -90,
+        'wrist_rotate': -90
+    }
+
+    # lengths from one joint to the next (always the previous one in the list
+    # e.g. base to shoulder = 71.5mm, wrist rotation joint to gripper end = 60mm)
+    # note that these are all translations in z
+    JOINT_LENGTHS = {
+        'shoulder': 71.5,
+        'elbow': 125,
+        'wrist_tilt': 125,
+        'wrist_rotate': 60,
+        'grip': 60,
+    }
+
+    DISTANCE_FROM_OUR_ORIGIN_TO_BASE = 280  # mm
 
     """
     Class to communicate with an Arduino controlled Braccio using the Postfix protocol by J.W. (see arduino folder).
@@ -52,6 +73,9 @@ class Braccio:
                           elbow=elbow, wrist_tilt=wrist_tilt,
                           wrist_rotate=wrist_rotate, grip=grip)
 
+    def reset_position(self):
+        self.send(base=0, shoulder=0, elbow=0, wrist_tilt=0, wrist_rotate=0, grip=40)  # default position
+
     def _send(self, **kwargs) -> int:
         payload = self._build_payload(**kwargs)
         print("Sending:", payload)
@@ -65,8 +89,12 @@ class Braccio:
         payload = ''
         for key, value in kwargs.items():
             if value is not None:
+                correction = self.ANGLE_CORRECTIONS.get(key)
+                if correction:
+                    value += correction
+
                 payload += f'{value} '
-                payload += f'{self.key_mappings[key]} '
+                payload += f'{self.KEY_MAPPINGS[key]} '
 
         return payload.rstrip()
 
