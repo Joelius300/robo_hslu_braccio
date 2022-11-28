@@ -48,6 +48,11 @@ def trans(x=0, y=0, z=0):
     ])
 
 
+def get_coords_from_matrix(matrix):
+    """Returns a vector with the x, y and z coordinates from a 4x4 matrix of homogenous coordinates."""
+    return matrix[:3, 3]
+
+
 def arr(*args):
     return np.array(args)
 
