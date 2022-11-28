@@ -4,7 +4,7 @@ from typing import Literal
 import numpy as np
 
 
-def rot(axis: Literal['x'] | Literal['y'] | Literal['z'], angle: int | float):
+def rot(axis: Literal['x', 'y', 'z'], angle: int | float):
     pass  # TODO
 
 
