@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from io import RawIOBase
 from typing import Optional
 
 import serial
 from serial import Serial
+
+from kinematics import rot, trans, get_coords_from_matrix
 
 
 def _transform_mm_to_grip(mm: Optional[int]):
@@ -13,6 +17,9 @@ def _transform_mm_to_grip(mm: Optional[int]):
 
 
 class Braccio:
+    """
+    Class to communicate with an Arduino controlled Braccio using the Postfix protocol by J.W. (see Braccio folder).
+    """
     KEY_MAPPINGS = {
         'base': 'b',
         'shoulder': 's',
@@ -23,11 +30,11 @@ class Braccio:
     }
 
     ANGLE_CORRECTIONS = {
-        'base': -90,
-        'shoulder': -90,
-        'elbow': -90,
-        'wrist_tilt': -90,
-        'wrist_rotate': -90
+        'base': 90,
+        'shoulder': 90,
+        'elbow': 90,
+        'wrist_tilt': 90,
+        'wrist_rotate': 90
     }
 
     # lengths from one joint to the next (always the previous one in the list
@@ -38,14 +45,18 @@ class Braccio:
         'elbow': 125,
         'wrist_tilt': 125,
         'wrist_rotate': 60,
-        'grip': 60,
+        'grip': 132,
     }
 
     DISTANCE_FROM_OUR_ORIGIN_TO_BASE = 280  # mm
 
-    """
-    Class to communicate with an Arduino controlled Braccio using the Postfix protocol by J.W. (see arduino folder).
-    """
+    current_angles = {
+        'base': 0,
+        'shoulder': 0,
+        'elbow': 0,
+        'wrist_tilt': 0,
+        'wrist_rotate': 0
+    }
 
     def __init__(self, port: str | Serial):
         if isinstance(port, str):
@@ -69,12 +80,34 @@ class Braccio:
 
         grip = _transform_mm_to_grip(grip)
 
+        self.current_angles = {
+            'base': base,
+            'shoulder': shoulder,
+            'elbow': elbow,
+            'wrist_tilt': wrist_tilt,
+            'wrist_rotate': wrist_rotate
+          }
+
         return self._send(base=base, shoulder=shoulder,
                           elbow=elbow, wrist_tilt=wrist_tilt,
                           wrist_rotate=wrist_rotate, grip=grip)
 
     def reset_position(self):
         self.send(base=0, shoulder=0, elbow=0, wrist_tilt=0, wrist_rotate=0, grip=40)  # default position
+
+    def get_end_point(self):
+
+        m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE) @ rot('z', self.current_angles['base'])
+        m2 = trans(z=self.JOINT_LENGTHS['shoulder']) @ rot('y', self.current_angles['shoulder'])
+        m3 = trans(z=self.JOINT_LENGTHS['elbow']) @ rot('y', self.current_angles['elbow'])
+        m4 = trans(z=self.JOINT_LENGTHS['wrist_tilt']) @ rot('y',  self.current_angles['wrist_tilt'])
+        m5 = trans(z=self.JOINT_LENGTHS['wrist_rotate']) @ rot('z', self.current_angles['wrist_rotate'])
+        m6 = trans(z=self.JOINT_LENGTHS['grip'])
+
+        M = m1 @ m2 @ m3 @ m4 @ m5 @ m6
+
+        return get_coords_from_matrix(M)
+
 
     def _send(self, **kwargs) -> int:
         payload = self._build_payload(**kwargs)
@@ -106,13 +139,14 @@ class Braccio:
 
 
 if __name__ == '__main__':
+
     port = serial.serial_for_url("loop://", timeout=.1)  # testing
     # port = "COM4"  # windows
     # port = "/dev/ttyACM0"  # linux
     with Braccio(port) as braccio:
-        braccio.send(base=1, shoulder=4, wrist_tilt=6, grip=10)
-        braccio.send(base=100, shoulder=100, elbow=359, wrist_tilt=0, wrist_rotate=50)
+        braccio.send(base=0, shoulder=30, elbow=20, wrist_tilt=10, wrist_rotate=0)
 
+        print(braccio.get_end_point())
         if isinstance(port, RawIOBase):
             print("Dumping received data on port:")
             print(port.readall().decode('ASCII'))

@@ -5,7 +5,6 @@ from typing import Literal
 
 import numpy as np
 
-
 def rot(axis: Literal['x', 'y', 'z'], angle: int | float):
     """Create a rotation matrix for angle around axis."""
 
