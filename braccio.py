@@ -33,7 +33,7 @@ class Braccio:
         'base': 90,
         'shoulder': 90,
         'elbow': 90,
-        'wrist_tilt': 90,
+        'wrist_tilt': 95,
         'wrist_rotate': 90
     }
 
