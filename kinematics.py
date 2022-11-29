@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
-from typing import Literal
+from typing import Literal, List
 
 import numpy as np
+from numpy import ndarray
 
 def rot(axis: Literal['x', 'y', 'z'], angle: int | float):
     """Create a rotation matrix for angle around axis."""
@@ -52,12 +53,48 @@ def get_coords_from_matrix(matrix):
     return matrix[:3, 3]
 
 
+def fabrik(points: List[ndarray], target: ndarray, max_iterations=100, min_acceptable_distance=.01):
+    # 1:1 implementation of https://youtu.be/PGk0rnyTa1U?t=221, not pythonized or optimized yet
+    origin = points[0]
+    segment_lengths = []
+    for i in range(len(points) - 1):
+        segment_lengths[i] = vlen(points[i + 1] - points[i])
+
+    for iteration in range(max_iterations):
+        starting_from_target = iteration % 2 == 0
+        points.reverse()
+        segment_lengths.reverse()
+        if starting_from_target:  # shouldn't this always be the case
+            assert points[0] == target
+        else:
+            assert points[0] == origin
+        points[0] = target if starting_from_target else origin
+
+        for i in range(1, len(points)):
+            direction = norm(points[i] - points[i - 1])
+            points[i] = points[i - 1] + direction * segment_lengths[i - 1]
+
+        distance_to_target = vlen(points[-1] - target)
+        if not starting_from_target and distance_to_target <= min_acceptable_distance:
+            return
+
+
 def arr(*args):
     return np.array(args)
 
 
 def vec(*args):
     return np.array([[k] for k in args])
+
+
+# length of a vector
+def vlen(x):
+    return np.linalg.norm(x)
+
+
+# normalize vector to length 1
+def norm(x):
+    return x / vlen(x)
 
 
 def cat(*args):
