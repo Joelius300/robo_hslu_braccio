@@ -80,14 +80,6 @@ class Braccio:
 
         grip = _transform_mm_to_grip(grip)
 
-        self.current_angles = {
-            'base': base,
-            'shoulder': shoulder,
-            'elbow': elbow,
-            'wrist_tilt': wrist_tilt,
-            'wrist_rotate': wrist_rotate
-          }
-
         return self._send(base=base, shoulder=shoulder,
                           elbow=elbow, wrist_tilt=wrist_tilt,
                           wrist_rotate=wrist_rotate, grip=grip)
@@ -96,7 +88,7 @@ class Braccio:
         self.send(base=0, shoulder=0, elbow=0, wrist_tilt=0, wrist_rotate=0, grip=40)  # default position
 
     def get_end_point(self):
-
+        # could be done in a loop/more generically but no need for this
         m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE) @ rot('z', self.current_angles['base'])
         m2 = trans(z=self.JOINT_LENGTHS['shoulder']) @ rot('y', self.current_angles['shoulder'])
         m3 = trans(z=self.JOINT_LENGTHS['elbow']) @ rot('y', self.current_angles['elbow'])
@@ -108,8 +100,8 @@ class Braccio:
 
         return get_coords_from_matrix(M)
 
-
     def _send(self, **kwargs) -> int:
+        self.current_angles.update(kwargs)
         payload = self._build_payload(**kwargs)
         print("Sending:", payload)
         payload += '\r\n'
