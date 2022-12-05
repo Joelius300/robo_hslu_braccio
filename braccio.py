@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import math
 from io import RawIOBase
-from typing import Optional, List
+from typing import Optional, List, Mapping
 
 import numpy as np
 import serial
 from numpy import ndarray
 from serial import Serial
 
-from kinematics import rot, trans, get_coords_from_matrix
+import kinematics
+from kinematics import rot, trans, get_coords_from_matrix, angle_between, vec, arr
 
 
 def _transform_mm_to_grip(mm: Optional[int]):
@@ -120,22 +121,45 @@ class Braccio:
     def _get_angles_from_points(self, points: dict[str, ndarray]):
         angles = {}
         base_to_end = points['grip'] - points['base']
-        angles['base'] = math.degrees(np.arctan2(base_to_end[1], base_to_end[0]))
+        angles['base'] = np.rad2deg(np.arctan2(base_to_end[1], base_to_end[0]))
         shoulder_to_elbow = points['elbow'] - points['shoulder']
-        angles['shoulder'] = math.degrees(np.arctan2(shoulder_to_elbow[0], shoulder_to_elbow[2]))
+        angles['shoulder'] = np.rad2deg(angle_between(arr(0, 0, 1), shoulder_to_elbow))
         elbow_to_wrist = points['wrist_tilt'] - points['elbow']
-        angles['elbow'] = math.degrees(np.arctan2(elbow_to_wrist[0], elbow_to_wrist[2])) - angles['shoulder']
+        angles['elbow'] = np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist))
         wrist_to_end = points['grip'] - points['wrist_tilt']  # could also use wrist_rotate instead of grip, will be on the same line because wrist_rotate can only rotate in z
-        angles['wrist_tilt'] = math.degrees(np.arctan2(wrist_to_end[0], wrist_to_end[2])) - angles['elbow']
+        angles['wrist_tilt'] = np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))
+
+        if angles['base'] > 90:
+            angles['base'] -= 180
+            angles['shoulder'] *= -1
+            angles['elbow'] *= -1
+            angles['wrist_tilt'] *= -1
 
         # wrist_rotate's angle doesn't influence end position, so it cannot be determined here
         return angles
 
-    def get_angles_from_points(self):
-        return self._get_angles_from_points(self.current_points)
+    def fabrik(self, target: ndarray):
+        p = lambda x: self.current_points[x]
+        l = lambda x: self.JOINT_LENGTHS[x]
+        points = [p('base'), p('shoulder'), p('elbow'), p('wrist_tilt'), p('grip')]
+        lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
+        kinematics.fabrik(points, lengths, target, acceptable_distance=1)
+        points = {
+            'base': points[0],
+            'shoulder': points[1],
+            'elbow': points[2],
+            'wrist_tilt': points[3],
+            'grip': points[4],
+        }
+
+        # self.current_points.update(points)
+        # self.current_angles.update(angles)
+        angles = self._get_angles_from_points(points)
+
+        return angles
 
     def _send(self, **kwargs) -> int:
-        self.current_angles.update(kwargs)
+        self.current_angles.update({k: v for k, v in kwargs.items() if v is not None})
         self._calculate_points()
 
         payload = self._build_payload(**kwargs)
@@ -154,7 +178,7 @@ class Braccio:
                 if correction:
                     value += correction
 
-                payload += f'{value} '
+                payload += f'{int(value)} '
                 payload += f'{self.KEY_MAPPINGS[key]} '
 
         return payload.rstrip()

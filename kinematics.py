@@ -72,7 +72,7 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
     # - realistic motion
     # FABRIK CONs
     # - doesn't return angles but positions
-    # - constraints are hard
+    # - constraints are hard (currently not possible)
     # 1:1 implementation of https://youtu.be/PGk0rnyTa1U?t=221, not pythonized or optimized yet
     origin = points[0]
 
@@ -90,6 +90,9 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
         if not starting_from_target and distance_to_target <= acceptable_distance:
             return
 
+
+def angle_between(p, q):
+    return np.arccos(np.dot(norm(p), norm(q)))
 
 def arr(*args):
     return np.array(args)
