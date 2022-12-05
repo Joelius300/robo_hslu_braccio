@@ -53,21 +53,33 @@ def get_coords_from_matrix(matrix):
     return matrix[:3, 3]
 
 
-def fabrik(points: List[ndarray], target: ndarray, max_iterations=100, min_acceptable_distance=.01):
+def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray, max_iterations=100, acceptable_distance=.01):
+    """
+    Finds the points in space where the joints have to be in order for the end effector (last joint) to reach the given
+    target (with a given tolerance). Since we already know the lengths of the segments, we pass them to the function to
+    avoid calculating them again.
+    :param points: List of coordinate-vectors of the joints
+    :param segment_lengths: Lengths of the segments between the joints
+    :param target: The target coordinate-vector
+    :param max_iterations: The maximum number of iterations before a non-converged result is returned
+    :param acceptable_distance: The maximum distance the end effector is allowed to be from the target point when returning
+    :return: None, because the points array is updated in place
+    """
+    # FABRIK PROs
+    # - fast
+    # - simple
+    # - smooth motion
+    # - realistic motion
+    # FABRIK CONs
+    # - doesn't return angles but positions
+    # - constraints are hard
     # 1:1 implementation of https://youtu.be/PGk0rnyTa1U?t=221, not pythonized or optimized yet
     origin = points[0]
-    segment_lengths = []
-    for i in range(len(points) - 1):
-        segment_lengths[i] = vlen(points[i + 1] - points[i])
 
     for iteration in range(max_iterations):
         starting_from_target = iteration % 2 == 0
         points.reverse()
         segment_lengths.reverse()
-        if starting_from_target:  # shouldn't this always be the case
-            assert points[0] == target
-        else:
-            assert points[0] == origin
         points[0] = target if starting_from_target else origin
 
         for i in range(1, len(points)):
@@ -75,7 +87,7 @@ def fabrik(points: List[ndarray], target: ndarray, max_iterations=100, min_accep
             points[i] = points[i - 1] + direction * segment_lengths[i - 1]
 
         distance_to_target = vlen(points[-1] - target)
-        if not starting_from_target and distance_to_target <= min_acceptable_distance:
+        if not starting_from_target and distance_to_target <= acceptable_distance:
             return
 
 

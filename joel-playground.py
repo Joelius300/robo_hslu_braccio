@@ -1,17 +1,25 @@
 import time
+from io import RawIOBase
+
+import serial
 
 from braccio import Braccio
 
 if __name__ == '__main__':
     port = "/dev/ttyACM0"
-    # port = serial.serial_for_url("loop://", timeout=.1)  # testing
+    port = serial.serial_for_url("loop://", timeout=.1)  # testing
     with Braccio(port) as b:
-        time.sleep(5)  # important
+        # time.sleep(5)  # important
 
-        b.reset_position()
+        b.send(base=0, shoulder=30, elbow=15, wrist_tilt=10, wrist_rotate=20)
+        print(b.get_angles_from_points())
 
-        time.sleep(10)
-        b.reset_position()
+        if isinstance(port, RawIOBase):
+            print("Dumping received data on port:")
+            print(port.readall().decode('ASCII'))
+
+        # time.sleep(10)
+        # b.reset_position()
 
 
 def hard_coded_pick_and_place(b: Braccio):

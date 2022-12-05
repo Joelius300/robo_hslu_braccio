@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
 from io import RawIOBase
-from typing import Optional
+from typing import Optional, List
 
+import numpy as np
 import serial
+from numpy import ndarray
 from serial import Serial
 
 from kinematics import rot, trans, get_coords_from_matrix
@@ -33,9 +36,11 @@ class Braccio:
         'base': 90,
         'shoulder': 90,
         'elbow': 90,
-        'wrist_tilt': 95,
+        'wrist_tilt': 90 + 5,
         'wrist_rotate': 90
     }
+
+    DISTANCE_FROM_OUR_ORIGIN_TO_BASE = 280  # mm
 
     # lengths from one joint to the next (always the previous one in the list
     # e.g. base to shoulder = 71.5mm, wrist rotation joint to gripper end = 60mm)
@@ -48,8 +53,6 @@ class Braccio:
         'grip': 132,
     }
 
-    DISTANCE_FROM_OUR_ORIGIN_TO_BASE = 280  # mm
-
     current_angles = {
         'base': 0,
         'shoulder': 0,
@@ -58,11 +61,14 @@ class Braccio:
         'wrist_rotate': 0
     }
 
+    current_points: dict[str, ndarray] = {}
+
     def __init__(self, port: str | Serial):
         if isinstance(port, str):
             self._port = serial.Serial(port, baudrate=9600, parity='N', bytesize=8, stopbits=1, timeout=None)
         else:
             self._port = port
+        self._calculate_points()
 
     def send(self, *,
              base: Optional[int] = None,
@@ -87,8 +93,7 @@ class Braccio:
     def reset_position(self):
         self.send(base=0, shoulder=0, elbow=0, wrist_tilt=0, wrist_rotate=0, grip=40)  # default position
 
-    def get_end_point(self):
-        # could be done in a loop/more generically but no need for this
+    def _calculate_points(self):
         m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE) @ rot('z', self.current_angles['base'])
         m2 = trans(z=self.JOINT_LENGTHS['shoulder']) @ rot('y', self.current_angles['shoulder'])
         m3 = trans(z=self.JOINT_LENGTHS['elbow']) @ rot('y', self.current_angles['elbow'])
@@ -96,12 +101,43 @@ class Braccio:
         m5 = trans(z=self.JOINT_LENGTHS['wrist_rotate']) @ rot('z', self.current_angles['wrist_rotate'])
         m6 = trans(z=self.JOINT_LENGTHS['grip'])
 
-        M = m1 @ m2 @ m3 @ m4 @ m5 @ m6
+        M = m1
+        self.current_points['base'] = get_coords_from_matrix(M)
+        M = M @ m2
+        self.current_points['shoulder'] = get_coords_from_matrix(M)
+        M = M @ m3
+        self.current_points['elbow'] = get_coords_from_matrix(M)
+        M = M @ m4
+        self.current_points['wrist_tilt'] = get_coords_from_matrix(M)
+        M = M @ m5
+        self.current_points['wrist_rotate'] = get_coords_from_matrix(M)
+        M = M @ m6
+        self.current_points['grip'] = get_coords_from_matrix(M)
 
-        return get_coords_from_matrix(M)
+    def get_end_point(self):
+        return self.current_points['grip']
+
+    def _get_angles_from_points(self, points: dict[str, ndarray]):
+        angles = {}
+        base_to_end = points['grip'] - points['base']
+        angles['base'] = math.degrees(np.arctan2(base_to_end[1], base_to_end[0]))
+        shoulder_to_elbow = points['elbow'] - points['shoulder']
+        angles['shoulder'] = math.degrees(np.arctan2(shoulder_to_elbow[0], shoulder_to_elbow[2]))
+        elbow_to_wrist = points['wrist_tilt'] - points['elbow']
+        angles['elbow'] = math.degrees(np.arctan2(elbow_to_wrist[0], elbow_to_wrist[2])) - angles['shoulder']
+        wrist_to_end = points['grip'] - points['wrist_tilt']  # could also use wrist_rotate instead of grip, will be on the same line because wrist_rotate can only rotate in z
+        angles['wrist_tilt'] = math.degrees(np.arctan2(wrist_to_end[0], wrist_to_end[2])) - angles['elbow']
+
+        # wrist_rotate's angle doesn't influence end position, so it cannot be determined here
+        return angles
+
+    def get_angles_from_points(self):
+        return self._get_angles_from_points(self.current_points)
 
     def _send(self, **kwargs) -> int:
         self.current_angles.update(kwargs)
+        self._calculate_points()
+
         payload = self._build_payload(**kwargs)
         print("Sending:", payload)
         payload += '\r\n'
