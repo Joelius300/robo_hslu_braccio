@@ -58,23 +58,27 @@ if __name__ == '__main__':
     with Braccio(port) as b:
         # time.sleep(5)  # important
 
-        testCase = {'base': 90, 'shoulder': 82, 'elbow': 66, 'wrist_tilt': -84}
-        b.send(**testCase)
-        # b.send(base=-72, shoulder=-30, elbow=15, wrist_tilt=10)
+        # testCase = {'base': 90, 'shoulder': 82, 'elbow': 66, 'wrist_tilt': -84}
+        # b.send(**testCase)
+        b.send(base=-72, shoulder=-30, elbow=15, wrist_tilt=10)
+        # print("Input angles")
+        # print(b.current_angles)
+        # print("Recalculated angles")
+        # print(b.get_calculated_angles())
+
+        print("Testing FABRIK")
+        # it somehow goes too low with this..
+        target = arr(50, 50, 200)
+        angles = b.fabrik(target)
+        b.send(**angles)
         print("Input angles")
         print(b.current_angles)
         print("Recalculated angles")
         print(b.get_calculated_angles())
+        print(f"Current points (grip should be at {target})")
+        print(b.current_points)
 
-        # test_angle_conversions(b)
-
-        # it somehow goes too low with this..
-        # target = arr(50, 50, 200)
-        # angles = b.fabrik()
-        # b.send(**angles)
-        # print(b.current_angles)
-        # print(f"Current points (grip should be at {target})")
-        # print(b.current_points)
+        # Okay we vorhär d Position reset isch de isch stimmt z target mit FABRIK
 
         if isinstance(port, RawIOBase):
             print("Dumping received data on port:")

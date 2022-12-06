@@ -84,10 +84,12 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
         segment_lengths.reverse()
         points[0] = target if starting_from_target else origin
 
+        # constrain lengths
         for i in range(1, len(points)):
             direction = norm(points[i] - points[i - 1])
             points[i] = points[i - 1] + direction * segment_lengths[i - 1]
 
+        # finish if close enough
         distance_to_target = vlen(points[-1] - target)
         if not starting_from_target and distance_to_target <= acceptable_distance:
             return
