@@ -6,6 +6,7 @@ from typing import Literal, List
 import numpy as np
 from numpy import ndarray
 
+
 def rot(axis: Literal['x', 'y', 'z'], angle: int | float):
     """Create a rotation matrix for angle around axis."""
 
@@ -53,7 +54,8 @@ def get_coords_from_matrix(matrix):
     return matrix[:3, 3]
 
 
-def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray, max_iterations=100, acceptable_distance=.01):
+def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray, max_iterations=100,
+           acceptable_distance=.01):
     """
     Finds the points in space where the joints have to be in order for the end effector (last joint) to reach the given
     target (with a given tolerance). Since we already know the lengths of the segments, we pass them to the function to
@@ -93,6 +95,14 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
 
 def angle_between(p, q):
     return np.arccos(np.dot(norm(p), norm(q)))
+
+
+def angle_between_in_plane(p, q, plane_normal):
+    """Returns the angle between two vectors in a plane and corrects the handiness according to the plane (aligns
+    the directions."""
+    cross = np.cross(p, q)
+    return angle_between(p, q) * np.sign(np.dot(plane_normal, cross))
+
 
 def arr(*args):
     return np.array(args)
