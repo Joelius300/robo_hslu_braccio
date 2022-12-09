@@ -108,6 +108,7 @@ def angle_between(p, q):
 
 
 def angle_between2d(a, b):
+    """Returns the signed counter clock wise angle [-pi; pi] between two 2d vectors."""
     angle_1 = angle_between2d_impl1(a, b)
     angle_2 = angle_between2d_impl2(a, b)
 

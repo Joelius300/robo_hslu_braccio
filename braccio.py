@@ -42,9 +42,9 @@ class Braccio:
 
     DISTANCE_FROM_OUR_ORIGIN_TO_BASE = 280  # mm
 
-    # lengths from one joint to the next (always the previous one in the list
+    # lengths from the previous TO THIS JOINT
     # e.g. base to shoulder = 71.5mm, wrist rotation joint to gripper end = 60mm)
-    # note that these are all translations in z
+    # note that these are all translations in z when the angles are all 0
     JOINT_LENGTHS = {
         'shoulder': 71.5,
         'elbow': 125,
@@ -53,6 +53,7 @@ class Braccio:
         'grip': 132,
     }
 
+    # the current CLOCK WISE angles
     current_angles = {
         'base': 0,
         'shoulder': 0,
@@ -61,6 +62,7 @@ class Braccio:
         'wrist_rotate': 0
     }
 
+    # current x,y,z coordinates of all the joints
     current_points: dict[str, ndarray] = {}
 
     def __init__(self, port: str | Serial):
@@ -95,12 +97,21 @@ class Braccio:
 
     # forward kinematics
     def _calculate_points_from_angles(self):
-        m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE) @ rot('z', self.current_angles['base'])
-        m2 = trans(z=self.JOINT_LENGTHS['shoulder']) @ rot('y', self.current_angles['shoulder'])
-        m3 = trans(z=self.JOINT_LENGTHS['elbow']) @ rot('y', self.current_angles['elbow'])
-        m4 = trans(z=self.JOINT_LENGTHS['wrist_tilt']) @ rot('y', self.current_angles['wrist_tilt'])
-        m5 = trans(z=self.JOINT_LENGTHS['wrist_rotate']) @ rot('z', self.current_angles['wrist_rotate'])
-        m6 = trans(z=self.JOINT_LENGTHS['grip'])
+        # these translations here basically move around the camera
+        # we start out at 0,0,0 (looking in x-direction) and then move 280 in x direction.
+        # now we're at 280,0,0 so far so good.
+        # now we rotate the camera a certain angle COUNTER CLOCK-WISE. When we consider "straight ahead" from our camera
+        # to be x-positive we have essentially rotated the whole coordinate system counter clock-wise. This means that
+        # all the points which remained on their positions, are obviously now rotated CLOCK-WISE (their position is
+        # relative to the x-axis). Here we only want to move around the camera and take snapshots of our positions.
+        # but if we wanted to rotate a point around the origin, a counter clock wise rotation of the coordinate system
+        # means a clock wise rotation of the point!
+        m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE)  # orig to base
+        m2 = rot('z', self.current_angles['base']) @ trans(z=self.JOINT_LENGTHS['shoulder'])  # base to shoulder
+        m3 = rot('y', self.current_angles['shoulder']) @ trans(z=self.JOINT_LENGTHS['elbow'])  # shoulder to elbow
+        m4 = rot('y', self.current_angles['elbow']) @ trans(z=self.JOINT_LENGTHS['wrist_tilt'])  # elbow to wrist_tilt
+        m5 = rot('y', self.current_angles['wrist_tilt']) @ trans(z=self.JOINT_LENGTHS['wrist_rotate'])  # wrist_tilt to wrist_rotate
+        m6 = rot('z', self.current_angles['wrist_rotate']) @ trans(z=self.JOINT_LENGTHS['grip'])  # wrist_rotate to grip
 
         M = m1
         self.current_points['base'] = get_coords_from_matrix(M)
@@ -157,8 +168,8 @@ class Braccio:
         required_base_angle = -np.rad2deg((np.sign(base_to_target[1])) * np.arccos(
             -base_to_target[0] / np.sqrt((base_to_target[0] ** 2) + (base_to_target[1] ** 2))))
 
-        # rotates around the base for the purpose of bringing the point into the x-z plane
         def rotate_around_base(p, angle):
+            """Rotates point around the base CLOCK WISE for the purpose of bringing the point into the x-z plane."""
             moved_to_origin = trans(-self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ trans(*p)
             rotated = rot('z', angle) @ moved_to_origin
             moved_back = trans(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ rotated
@@ -181,7 +192,11 @@ class Braccio:
             return moved_back
 
         def p(name):
-            rotated = rotate_around_base(self.current_points[name], -self.current_angles['base'])
+            # the base angle is clock wise and the rotate_around_base method rotates the point clock wise.
+            # since we want to move the point "back" and compensate the base-rotation, we negate it so it
+            # a counter clock wise rotation which nullifies the current clock wise rotation
+            angle_needed_to_move_arm_to_x_z_plane = -self.current_angles['base']
+            rotated = rotate_around_base(self.current_points[name], angle_needed_to_move_arm_to_x_z_plane)
             [x, y, z] = rotated
             if not np.isclose(0, y):
                 print(f"After rotating {name} by {-self.current_angles['base']}° to the x-z plane we expected y to be 0 but it was {y}!")
@@ -195,7 +210,7 @@ class Braccio:
         lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
 
         # sanity check
-        # we are rotating, not projecting so the distances should be the same (they also need to be for FABRIK)!
+        # we are rotating, not projecting, so the distances should be the same (they also need to be for FABRIK)!
         for i in range(len(points) - 1):
             v = points[i + 1] - points[i]
             l = vlen(v)
@@ -205,6 +220,8 @@ class Braccio:
         distance_base_to_target_before = vlen(target - self.current_points['base'])
 
         # also rotate target onto the x-z plane
+        # instead of moving the arm to the target (arm clock wise rotation around base) we want to move the target
+        # to the x-z plane (target counter clock wise rotation around base) therefore we negate the angle.
         target = rotate_around_base(target, -required_base_angle)
 
         distance_base_to_target_after = vlen(target - self.current_points['base'])
