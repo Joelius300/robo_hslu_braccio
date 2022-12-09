@@ -96,7 +96,14 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
 
 
 def angle_between(p, q):
-    return np.arccos(np.dot(norm(p), norm(q)))
+    dot = np.dot(p, q)
+    p_len = vlen(p)
+    q_len = vlen(q)
+    divd = dot / (p_len * q_len)
+    angle = np.arccos(np.clip(divd, -1, 1))
+    if np.isnan(angle):
+        print(f"Angle between {p} and {q} came out to NaN!!!")
+    return angle
 
 
 def angle_between_in_plane(p, q, plane_normal):

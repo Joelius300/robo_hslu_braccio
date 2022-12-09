@@ -6,27 +6,31 @@ import serial
 
 from braccio import Braccio
 from kinematics import arr
-from random import random
+import random
 
 
 def test_angle_conversions(b: Braccio):
     for i in range(10000):
         # break
         angles = {
-            'base': round(random() * 180 - 90),
-            'shoulder': round(random() * 180 - 90),
-            'elbow': round(random() * 180 - 90),
-            'wrist_tilt': round(random() * 180 - 90),
+            'base': random.randint(-90, 90),
+            'shoulder': random.randint(-90, 90),
+            'elbow': random.randint(-90, 90),
+            'wrist_tilt': random.randint(-90, 90),
         }
         b.send(**angles)
         calc_angles = b.get_calculated_angles()
-        print("Input: ", angles)
-        print("Output: ", calc_angles)
+        input_printed = False
         for k, v in calc_angles.items():
             expected = round(angles[k])
             actual = round(v)
             if actual != expected:
+                if not input_printed:
+                    print("Input: ", angles)
+                    print("Output: ", calc_angles)
+                    input_printed = True
                 print(f"ERROR: {k} should have been {expected} but was {actual}")
+        time.sleep(0.05)
 
 
 def hard_coded_pick_and_place(b: Braccio):
@@ -69,12 +73,17 @@ if __name__ == '__main__':
         print("Testing FABRIK")
         # it somehow goes too low with this..
         target = arr(50, 50, 200)
+        print("Target:", target)
+        print("Current position")
+        print(b.current_points)
         angles = b.fabrik(target)
+        print("FABRIK angles")
+        print(angles)
         b.send(**angles)
         print("Input angles")
         print(b.current_angles)
-        print("Recalculated angles")
-        print(b.get_calculated_angles())
+        # print("Recalculated angles")
+        # print(b.get_calculated_angles())
         print(f"Current points (grip should be at {target})")
         print(b.current_points)
 
