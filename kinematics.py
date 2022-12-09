@@ -92,7 +92,7 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
         # finish if close enough
         distance_to_target = vlen(points[-1] - target)
         if not starting_from_target and distance_to_target <= acceptable_distance:
-            print(f"FABRIK ended on iteration {iteration}")
+            print(f"FABRIK converged on iteration {iteration}")
             return
 
 
@@ -105,6 +105,12 @@ def angle_between(p, q):
     if np.isnan(angle):
         print(f"Angle between {p} and {q} came out to NaN!!!")
     return angle
+
+
+def angle_between2d(a, b):
+    [ax, ay] = a
+    [bx, by] = b
+    return np.arctan2(ax * by - ay * bx, ax * bx + ay * by)
 
 
 def angle_between_in_plane(p, q, plane_normal):
