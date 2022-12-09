@@ -72,7 +72,8 @@ if __name__ == '__main__':
 
         print("Testing FABRIK")
         # it somehow goes too low with this..
-        target = arr(100, -200, 44)
+        # target = arr(100, -200, 44)
+        target = arr(50, -50, 200)
         print("Target:", target)
         print("Current position")
         print(b.current_points)
