@@ -128,32 +128,20 @@ class Braccio:
     #     return self._get_angles_from_points(self.current_points)
 
     def _get_angles_from_points(self, base_angle, points: dict[str, ndarray]):
-        angles = {}
-        angles['base'] = base_angle
-        # for all the others we take the angle between two vectors since they might not be in a plane when the base
-        # is rotated (otherwise we could theoretically use arctan).
-        # When we take the angle between two vectors using the dot product of them we don't need to take
-        # this potential base rotation into account. Uses the very important formula: v * w = |v| * |w| * cos(p)  :)
+        angles = {'base': base_angle}
         shoulder_to_elbow = points['elbow'] - points['shoulder']
-        angles['shoulder'] = np.rad2deg(angle_between(arr(0, 1), shoulder_to_elbow))
+        # angles['shoulder'] = np.rad2deg(np.arctan2(shoulder_to_elbow[0], shoulder_to_elbow[1]))
+        # angles['shoulder'] = np.rad2deg(angle_between(arr(0, 1), shoulder_to_elbow)) # right handed
+        angles['shoulder'] = -np.rad2deg(angle_between(shoulder_to_elbow, arr(0, 1)))  # left handed
         elbow_to_wrist = points['wrist_tilt'] - points['elbow']
-        angles['elbow'] = np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist))
-        # could also use wrist_rotate instead of grip, will be on the same line, wrist_rotate can only rotate in z
+        # angles['elbow'] = np.rad2deg(np.arctan2(elbow_to_wrist[0], elbow_to_wrist[1])) - angles['shoulder']
+        # angles['elbow'] = np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist)) # right handed
+        angles['elbow'] = -np.rad2deg(angle_between(elbow_to_wrist, shoulder_to_elbow)) # left handed
+        # could also use wrist_rotate instead of grip, will be on the same line because wrist_rotate can only rotate in z
         wrist_to_end = points['grip'] - points['wrist_tilt']
-        angles['wrist_tilt'] = np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))
-        # wrist_rotate's angle doesn't influence end position, so it cannot be determined here
-
-        # Turn the arm around if the angles want to turn the base more than 90°
-        # IMO this >= doesn't really make sense it should only be > 90 because that's the restriction on the robot.
-        # However, when arccos could return 90 or -90 I assume it always returns 90 so when you input -90 and it
-        # recalculates, it comes out to 90. With >= this doesn't happen but I'm not sure if there might be other
-        # edge cases produced by this. Anyway it seems to work fine now, both 90 and -90 work too.
-        if abs(angles['base']) > 90:
-            angles['base'] += -np.sign(angles['base']) * 180  # add 180 if negative, subtract 180 if positive
-            angles['shoulder'] *= -1
-            angles['elbow'] *= -1
-            angles['wrist_tilt'] *= -1
-
+        # angles['wrist_tilt'] = np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))  # right handed
+        angles['wrist_tilt'] = -np.rad2deg(angle_between(wrist_to_end, elbow_to_wrist))  # left handed
+        # angles['wrist_tilt'] = np.rad2deg(np.arctan2(wrist_to_end[0], wrist_to_end[1])) - angles['elbow']
         return angles
 
     def fabrik(self, target: ndarray, acceptable_distance=.5):
@@ -169,7 +157,6 @@ class Braccio:
         base_to_end = target - self.current_points['base']
         base_to_end[2] = 0  # project to x-y plane
         base_to_end = norm(base_to_end)
-        # angles['base'] = np.rad2deg(np.arctan2(base_to_end[1], base_to_end[0])) AFAIK this does the same..
         # see formula in chat. it's basically just the dot product transformed.
         required_base_angle = -np.rad2deg((np.sign(base_to_end[1])) * np.arccos(
             -base_to_end[0] / np.sqrt((base_to_end[0] ** 2) + (base_to_end[1] ** 2))))
@@ -180,7 +167,7 @@ class Braccio:
             unprojected = self.current_points[x]
             [x, y, z] = unprojected
             projected = project_to_plane_matrix @ trans(x, y, z)
-            [x, y, z] = get_coords_from_matrix(projected)
+            [x, _, z] = get_coords_from_matrix(projected)
             return arr(x, z)
 
         l = lambda x: self.JOINT_LENGTHS[x]
@@ -189,6 +176,8 @@ class Braccio:
         [x, y, z] = target
         [x, y, z] = get_coords_from_matrix(project_to_plane_matrix @ trans(x, y, z))
         target = arr(x, z)
+        print("Projected target")
+        print(target)
         kinematics.fabrik(points, lengths, target, acceptable_distance=acceptable_distance)
         points = {
             'shoulder': points[1],
