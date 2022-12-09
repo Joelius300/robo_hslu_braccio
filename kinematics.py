@@ -108,9 +108,36 @@ def angle_between(p, q):
 
 
 def angle_between2d(a, b):
+    angle_1 = angle_between2d_impl1(a, b)
+    angle_2 = angle_between2d_impl2(a, b)
+
+    if not np.isclose(angle_1, angle_2):
+        print("WHY THE FUCK DO THESE ANGLE IMPL GIVE DIFFERENT RESULTS AAAAAAAA")
+
+    return angle_2
+
+
+def angle_between2d_impl1(a, b):
+    # https://stackoverflow.com/a/2150475/10883465
     [ax, ay] = a
     [bx, by] = b
-    return np.arctan2(ax * by - ay * bx, ax * bx + ay * by)
+    A = ax * by - ay * bx
+    B = ax * bx + ay * by
+    return np.arctan2(A, B)
+
+
+def angle_between2d_impl2(a, b):
+    # https://stackoverflow.com/a/21484228/10883465
+    [ax, ay] = a
+    [bx, by] = b
+    angle = np.arctan2(by, bx) - np.arctan2(ay, ax)
+
+    if angle > np.pi:
+        angle -= 2 * np.pi
+    elif angle <= -np.pi:
+        angle += 2 * np.pi
+
+    return angle
 
 
 def angle_between_in_plane(p, q, plane_normal):
