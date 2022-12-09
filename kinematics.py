@@ -92,6 +92,7 @@ def fabrik(points: List[ndarray], segment_lengths: List[float], target: ndarray,
         # finish if close enough
         distance_to_target = vlen(points[-1] - target)
         if not starting_from_target and distance_to_target <= acceptable_distance:
+            print(f"FABRIK ended on iteration {iteration}")
             return
 
 
