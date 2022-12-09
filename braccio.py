@@ -9,7 +9,7 @@ from numpy import ndarray
 from serial import Serial
 
 import kinematics
-from kinematics import rot, trans, get_coords_from_matrix, angle_between, angle_between_in_plane, arr, norm
+from kinematics import rot, trans, get_coords_from_matrix, angle_between, arr, norm, vlen
 
 
 def _transform_mm_to_grip(mm: Optional[int]):
@@ -118,36 +118,32 @@ class Braccio:
     def get_end_point(self):
         return self.current_points['grip']
 
-    # def get_calculated_angles(self):
-    #     """
-    #     Returns the angles that are calculated from the current estimated position.
-    #     Note this is wildly imprecise as it's a double estimation first from angles to position then back to angles.
-    #     However, if our code is sound, the difference between these angles and the ones passed into send should be
-    #     very small.
-    #     """
-    #     return self._get_angles_from_points(self.current_points)
+    def _get_angles_from_points2d(self, points: dict[str, ndarray]):
+        angles = {}
 
-    def _get_angles_from_points(self, base_angle, points: dict[str, ndarray]):
-        angles = {'base': base_angle}
         shoulder_to_elbow = points['elbow'] - points['shoulder']
-        # angles['shoulder'] = np.rad2deg(np.arctan2(shoulder_to_elbow[0], shoulder_to_elbow[1]))
-        # angles['shoulder'] = np.rad2deg(angle_between(arr(0, 1), shoulder_to_elbow)) # right handed
-        angles['shoulder'] = -np.rad2deg(angle_between(shoulder_to_elbow, arr(0, 1)))  # left handed
+        angles['shoulder'] = -np.rad2deg(angle_between(arr(0, 1), shoulder_to_elbow))  # left handed -> negative
+
         elbow_to_wrist = points['wrist_tilt'] - points['elbow']
-        # angles['elbow'] = np.rad2deg(np.arctan2(elbow_to_wrist[0], elbow_to_wrist[1])) - angles['shoulder']
-        # angles['elbow'] = np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist)) # right handed
-        angles['elbow'] = -np.rad2deg(angle_between(elbow_to_wrist, shoulder_to_elbow)) # left handed
-        # could also use wrist_rotate instead of grip, will be on the same line because wrist_rotate can only rotate in z
-        wrist_to_end = points['grip'] - points['wrist_tilt']
-        # angles['wrist_tilt'] = np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))  # right handed
-        angles['wrist_tilt'] = -np.rad2deg(angle_between(wrist_to_end, elbow_to_wrist))  # left handed
-        # angles['wrist_tilt'] = np.rad2deg(np.arctan2(wrist_to_end[0], wrist_to_end[1])) - angles['elbow']
+        angles['elbow'] = -np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist))  # left handed -> negative
+
+        wrist_to_end = points['grip'] - points['wrist_tilt']  # ignore wrist_rotate, must be on the same line anyway
+        angles['wrist_tilt'] = -np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))  # left handed -> negative
+
         return angles
 
-    def fabrik(self, target: ndarray, acceptable_distance=.5):
+    def fabrik(self, target: ndarray, acceptable_distance=.1):
         """
         Uses the FABRIK algorithm to determine an angle configuration that would move the end effector
         of Braccio to the specified target smoothly while taking into account the current position.
+
+        Note on implementation:
+
+        Since all of Braccio's joins except for the base operate only in one plane, we actually do a 2D FABRIK
+        by projecting all the current joint positions as well as the target onto the x-z plane before doing FABRIK.
+        Then after FABRIK is done, we use these 2D positions to calculate the angles of the joins in this plane.
+        The wrist_rotate angle cannot be determined because it doesn't have an effect on the position of the gripper.
+        The base angle was already determined at the beginning using a transformed dot product formula.
 
         :param target: The coordinates of the target point as a 3d row vector.
         :param acceptable_distance: The maximum tolerated distance from the potential end effector position to the target position.
@@ -161,23 +157,39 @@ class Braccio:
         required_base_angle = -np.rad2deg((np.sign(base_to_end[1])) * np.arccos(
             -base_to_end[0] / np.sqrt((base_to_end[0] ** 2) + (base_to_end[1] ** 2))))
 
-        project_to_plane_matrix = rot('z', -required_base_angle)
+        rotate_to_x_z_matrix = rot('z', -required_base_angle)
 
-        def p(x):
-            unprojected = self.current_points[x]
-            [x, y, z] = unprojected
-            projected = project_to_plane_matrix @ trans(x, y, z)
-            [x, _, z] = get_coords_from_matrix(projected)
+        def p(name):
+            [x, y, z] = self.current_points[name]
+            rotated = rotate_to_x_z_matrix @ trans(x, y, z)
+            [x, y, z] = get_coords_from_matrix(rotated)
+            if not np.isclose(0, y):
+                print(f"After rotating {name} by {-required_base_angle} we expected y to be 0 but it was {y}!")
+
             return arr(x, z)
 
-        l = lambda x: self.JOINT_LENGTHS[x]
+        l = lambda name: self.JOINT_LENGTHS[name]
         points = [p('base'), p('shoulder'), p('elbow'), p('wrist_tilt'), p('grip')]
         lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
+
+        # sanity check
+        # we are rotating, not projecting so the distances should be the same (they also need to be for FABRIK)!
+        for i in range(len(points) - 1):
+            v = points[i + 1] - points[i]
+            l = vlen(v)
+            if not np.isclose(l, lengths[i]):
+                print(f"Expected length of {lengths[i]} but got {l}!!")
+
         [x, y, z] = target
-        [x, y, z] = get_coords_from_matrix(project_to_plane_matrix @ trans(x, y, z))
+        [x, y, z] = get_coords_from_matrix(rotate_to_x_z_matrix @ trans(x, y, z))
+
+        if not np.isclose(0, y):
+            print(f"After rotating target by {-required_base_angle} we expected y to be 0 but it was {y}!")
+
         target = arr(x, z)
-        print("Projected target")
+        print("Rotated target")
         print(target)
+
         kinematics.fabrik(points, lengths, target, acceptable_distance=acceptable_distance)
         points = {
             'shoulder': points[1],
@@ -188,7 +200,10 @@ class Braccio:
         print("FABRIK points")
         print(points)
 
-        return self._get_angles_from_points(required_base_angle, points)
+        angles = self._get_angles_from_points2d(points)
+        angles.update(base=required_base_angle)
+
+        return angles
 
     def _send(self, **kwargs) -> int:
         self.current_angles.update({k: v for k, v in kwargs.items() if v is not None})
