@@ -9,7 +9,7 @@ from numpy import ndarray
 from serial import Serial
 
 import kinematics
-from kinematics import rot, trans, get_coords_from_matrix, angle_between, arr, norm, vlen
+from kinematics import rot, trans, get_coords_from_matrix, angle_between2d, arr, norm, vlen
 
 
 def _transform_mm_to_grip(mm: Optional[int]):
@@ -122,13 +122,13 @@ class Braccio:
         angles = {}
 
         shoulder_to_elbow = points['elbow'] - points['shoulder']
-        angles['shoulder'] = -np.rad2deg(angle_between(arr(0, 1), shoulder_to_elbow))  # left handed -> negative
+        angles['shoulder'] = -np.rad2deg(angle_between2d(arr(0, 1), shoulder_to_elbow))  # left handed -> negative
 
         elbow_to_wrist = points['wrist_tilt'] - points['elbow']
-        angles['elbow'] = -np.rad2deg(angle_between(shoulder_to_elbow, elbow_to_wrist))  # left handed -> negative
+        angles['elbow'] = -np.rad2deg(angle_between2d(shoulder_to_elbow, elbow_to_wrist))  # left handed -> negative
 
         wrist_to_end = points['grip'] - points['wrist_tilt']  # ignore wrist_rotate, must be on the same line anyway
-        angles['wrist_tilt'] = -np.rad2deg(angle_between(elbow_to_wrist, wrist_to_end))  # left handed -> negative
+        angles['wrist_tilt'] = -np.rad2deg(angle_between2d(elbow_to_wrist, wrist_to_end))  # left handed -> negative
 
         return angles
 
@@ -150,26 +150,48 @@ class Braccio:
         :return: A configuration of angles for the Braccio. Can be sent to Braccio with send(**angles).
         """
 
-        base_to_end = target - self.current_points['base']
-        base_to_end[2] = 0  # project to x-y plane
-        base_to_end = norm(base_to_end)
+        base_to_target = target - self.current_points['base']
+        base_to_target[2] = 0  # project to x-y plane
+        base_to_target = norm(base_to_target)
         # see formula in chat. it's basically just the dot product transformed.
-        required_base_angle = -np.rad2deg((np.sign(base_to_end[1])) * np.arccos(
-            -base_to_end[0] / np.sqrt((base_to_end[0] ** 2) + (base_to_end[1] ** 2))))
+        required_base_angle = -np.rad2deg((np.sign(base_to_target[1])) * np.arccos(
+            -base_to_target[0] / np.sqrt((base_to_target[0] ** 2) + (base_to_target[1] ** 2))))
 
-        rotate_to_x_z_matrix = rot('z', -required_base_angle)
+        # rotates around the base for the purpose of bringing the point into the x-z plane
+        def rotate_around_base(p, angle):
+            moved_to_origin = trans(-self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ trans(*p)
+            rotated = rot('z', angle) @ moved_to_origin
+            moved_back = trans(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ rotated
+            moved_back = get_coords_from_matrix(moved_back)
+
+            # we only rotate around z so the x should now be the previous hypotenuse in the x-y
+            # and y should be 0. z should not have moved.
+            [x, y, z] = (moved_back - self.current_points['base'])
+            [xp, yp, zp] = (p - self.current_points['base'])
+            hyp = np.sqrt(xp ** 2 + yp ** 2) * np.sign(xp)
+            if not np.isclose(hyp, x):
+                print(f"After rotation, the point was expected to have the x of the prev. hypotenuse {hyp} but has {x} instead.")
+
+            if not np.isclose(y, 0):
+                print(f"After rotation, the point was expected to be on the x-z plane (y=0) but has y={y}")
+
+            if not np.isclose(z, zp):
+                print(f"After rotation, the point was expected to have kept its z position but it changed from {zp} to {z}")
+
+            return moved_back
 
         def p(name):
-            [x, y, z] = self.current_points[name]
-            rotated = rotate_to_x_z_matrix @ trans(x, y, z)
-            [x, y, z] = get_coords_from_matrix(rotated)
+            rotated = rotate_around_base(self.current_points[name], -self.current_angles['base'])
+            [x, y, z] = rotated
             if not np.isclose(0, y):
-                print(f"After rotating {name} by {-required_base_angle} we expected y to be 0 but it was {y}!")
+                print(f"After rotating {name} by {-self.current_angles['base']}° to the x-z plane we expected y to be 0 but it was {y}!")
 
             return arr(x, z)
 
         l = lambda name: self.JOINT_LENGTHS[name]
-        points = [p('base'), p('shoulder'), p('elbow'), p('wrist_tilt'), p('grip')]
+        [x, _, z] = self.current_points['base']  # no need to rotate base around itself, pointless
+
+        points = [arr(x, z), p('shoulder'), p('elbow'), p('wrist_tilt'), p('grip')]
         lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
 
         # sanity check
@@ -180,11 +202,17 @@ class Braccio:
             if not np.isclose(l, lengths[i]):
                 print(f"Expected length of {lengths[i]} but got {l}!!")
 
-        [x, y, z] = target
-        [x, y, z] = get_coords_from_matrix(rotate_to_x_z_matrix @ trans(x, y, z))
+        distance_base_to_target_before = vlen(target - self.current_points['base'])
 
-        if not np.isclose(0, y):
-            print(f"After rotating target by {-required_base_angle} we expected y to be 0 but it was {y}!")
+        # also rotate target onto the x-z plane
+        target = rotate_around_base(target, -required_base_angle)
+
+        distance_base_to_target_after = vlen(target - self.current_points['base'])
+
+        if not np.isclose(distance_base_to_target_before, distance_base_to_target_after):
+            print(f"After rotating target by {-self.current_angles['base']} we expected the distance to still be {distance_base_to_target_before} but it changed to {distance_base_to_target_after}!")
+
+        [x, _, z] = target
 
         target = arr(x, z)
         print("Rotated target")
