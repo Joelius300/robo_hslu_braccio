@@ -150,9 +150,21 @@ class Braccio:
 
         Note on implementation:
 
-        Since all of Braccio's joins except for the base operate only in one plane, we actually do a 2D FABRIK
-        by projecting all the current joint positions as well as the target onto the x-z plane before doing FABRIK.
-        Then after FABRIK is done, we use these 2D positions to calculate the angles of the joins in this plane.
+        Since all of Braccio's joins except for the base (and wrist_rotate, but we don't care about that since it doesn't
+        influence the position of the arm) operate only in one plane, we actually do a 2D FABRIK.
+        For this we first rotate all the current joint positions to the x-z plane by doing a rotation in the opposite
+        direction that the base is currently rotated in. This means all the points y positions will be 0 and can be
+        dropped but unlike if we had projected, the distances between the points remain the same.
+        We also do this for the target, so we have a point on the x-z plane that we can target, which has still the same
+        distance from the base as the real target.
+        Then after FABRIK is done, we use the 2D positions output (of FABRIK) to calculate the angles of the joins
+        in this x-z plane (could be any plane, the vectors are now 2d and don't know about any external plane in 3d).
+        These angles are obviously the same as in 3d because we are basically just looking at the arm from an angle
+        that is perpendicular to the arm's plane, or another way of interpreting it (which is even closer to what we're
+        actually doing) is that we stand beside the arm, rotate it so the base is in it's default position with the arm
+        going straight along the x-axis, squint one eye so we only see the arm in 2d, and calculate the angles between
+        the arm parts. These angles don't change if we turn the base so these will be the ones we need to use even
+        though we calculated them in 2d and use it in 3d. All because the arm only operates in one plane. makes sense?
         The wrist_rotate angle cannot be determined because it doesn't have an effect on the position of the gripper.
         The base angle was already determined at the beginning using a transformed dot product formula.
 
@@ -227,7 +239,7 @@ class Braccio:
         distance_base_to_target_after = vlen(target - self.current_points['base'])
 
         if not np.isclose(distance_base_to_target_before, distance_base_to_target_after):
-            print(f"After rotating target by {-self.current_angles['base']} we expected the distance to still be {distance_base_to_target_before} but it changed to {distance_base_to_target_after}!")
+            print(f"After rotating target by {-required_base_angle} we expected the distance to still be {distance_base_to_target_before} but it changed to {distance_base_to_target_after}!")
 
         [x, _, z] = target
 
