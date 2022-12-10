@@ -106,6 +106,14 @@ class Braccio:
         # relative to the x-axis). Here we only want to move around the camera and take snapshots of our positions.
         # but if we wanted to rotate a point around the origin, a counter clock wise rotation of the coordinate system
         # means a clock wise rotation of the point!
+        # Another maybe easier way to understand what this does:
+        # Imagine you're looking through a camera at position 0,0,0 in x-direction. Then we move around and rotate
+        # the coordinate system. If we move the coordinate system 280 in x direction, we are now at -280. But if we say
+        # that we as the camera want to stay at 0,0,0 then the origin of the system has now moved the other way and is
+        # at 280,0,0. The same goes for rotation. If we keep looking straight and rotate the system around us by x°
+        # counter clock wise, we see the system moving to the left (counter clock wise) BUT THAT LOOKS THE SAME AS IF WE
+        # ARE ROTATING CLOCK WISE.
+        # It's all about perspective and I never want to think about this again holy fuck my brain is fried.
         m1 = trans(x=self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE)  # orig to base
         m2 = rot('z', self.current_angles['base']) @ trans(z=self.JOINT_LENGTHS['shoulder'])  # base to shoulder
         m3 = rot('y', self.current_angles['shoulder']) @ trans(z=self.JOINT_LENGTHS['elbow'])  # shoulder to elbow
