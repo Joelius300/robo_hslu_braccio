@@ -284,13 +284,42 @@ class Braccio:
             'wrist_tilt': points[3],
             'grip': points[4],
         }
+
         print("FABRIK points")
         print(points)
+
+        self._ensure_fabrik_makes_sense(points)
 
         angles = self._get_angles_from_points2d(points)
         angles.update(base=required_base_angle)
 
         return angles
+
+    def _ensure_fabrik_makes_sense(self, points):
+        # this code is fucking disgusting but who cares at this point
+        # TODO also assert positions, not just lengths, or is that redundant?
+        if not np.allclose(points['base'], arr(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0)):
+            print(f"Base not where we expect but {points['base']}")
+
+        base_to_shoulder = points['shoulder'] - points['base']
+        base_to_shoulder_len = vlen(base_to_shoulder)
+        if not np.isclose(base_to_shoulder_len, self.JOINT_LENGTHS['shoulder']):
+            print(f"Base to shoulder length unexpected: {base_to_shoulder_len} instead of {self.JOINT_LENGTHS['shoulder']}")
+
+        shoulder_to_elbow = points['elbow'] - points['shoulder']
+        shoulder_to_elbow_len = vlen(shoulder_to_elbow)
+        if not np.isclose(shoulder_to_elbow_len, self.JOINT_LENGTHS['elbow']):
+            print(f"Shoulder to elbow length unexpected: {shoulder_to_elbow_len} instead of {self.JOINT_LENGTHS['elbow']}")
+
+        elbow_to_wrist_tilt = points['wrist_tilt'] - points['elbow']
+        elbow_to_wrist_tilt_len = vlen(elbow_to_wrist_tilt)
+        if not np.isclose(elbow_to_wrist_tilt_len, self.JOINT_LENGTHS['wrist_tilt']):
+            print(f"Elbow to wrist tilt length unexpected: {elbow_to_wrist_tilt_len} instead of {self.JOINT_LENGTHS['wrist_tilt']}")
+
+        wrist_tilt_to_grip = points['grip'] - points['wrist_tilt']
+        wrist_tilt_to_grip_len = vlen(wrist_tilt_to_grip)
+        if not np.isclose(wrist_tilt_to_grip_len, self.JOINT_LENGTHS['wrist_rotate'] + self.JOINT_LENGTHS['grip']):
+            print(f"Wrist tilt to grip length unexpected: {wrist_tilt_to_grip_len} instead of {self.JOINT_LENGTHS['wrist_rotate'] + self.JOINT_LENGTHS['grip']}")
 
     def _send(self, **kwargs) -> int:
         self.current_angles.update({k: v for k, v in kwargs.items() if v is not None})
