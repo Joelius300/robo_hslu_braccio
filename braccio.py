@@ -143,6 +143,64 @@ class Braccio:
 
         return angles
 
+    def get_calculated_angles(self):
+        points = self._get_rotated_points_on_x_z()
+
+        angles = self._get_angles_from_points2d(points)
+        angles.update(base=self.current_angles['base'])
+
+        return angles
+
+    def _get_rotated_points_on_x_z(self):
+        [x, _, z] = self.current_points['base']  # no need to rotate base around itself, pointless
+        points = {
+            'base': arr(x, z),
+            'shoulder': self._get_point_on_x_z('shoulder'),
+            'elbow': self._get_point_on_x_z('elbow'),
+            'wrist_tilt': self._get_point_on_x_z('wrist_tilt'),
+            'grip': self._get_point_on_x_z('grip')
+        }
+
+        print("2d points")
+        print(points)
+
+        return points
+
+    def _rotate_around_base_to_x_z(self, p, angle):
+        """Rotates point around the base CLOCK WISE for the purpose of bringing the point into the x-z plane."""
+        moved_to_origin = trans(-self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ trans(*p)
+        rotated = rot('z', angle) @ moved_to_origin
+        moved_back = trans(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ rotated
+        moved_back = get_coords_from_matrix(moved_back)
+
+        # we only rotate around z so the x should now be the previous hypotenuse in the x-y
+        # and y should be 0. z should not have moved.
+        [x, y, z] = (moved_back - self.current_points['base'])
+        [xp, yp, zp] = (p - self.current_points['base'])
+        hyp = np.sqrt(xp ** 2 + yp ** 2) * np.sign(xp)
+        if not np.isclose(hyp, x):
+            print(f"After rotation, the point was expected to have the x of the prev. hypotenuse {hyp} but has {x} instead.")
+
+        if not np.isclose(y, 0):
+            print(f"After rotation, the point was expected to be on the x-z plane (y=0) but has y={y}")
+
+        if not np.isclose(z, zp):
+            print(f"After rotation, the point was expected to have kept its z position but it changed from {zp} to {z}")
+
+        return moved_back
+
+    def _get_point_on_x_z(self, name: str):
+        # the base angle is clock wise and the rotate_around_base method rotates the point clock wise.
+        # since we want to move the point "back" and compensate the base-rotation, we negate it so it
+        # a counter clock wise rotation which nullifies the current clock wise rotation
+        angle_needed_to_move_arm_to_x_z_plane = -self.current_angles['base']
+        rotated = self._rotate_around_base_to_x_z(self.current_points[name], angle_needed_to_move_arm_to_x_z_plane)
+        [x, y, z] = rotated
+        if not np.isclose(0, y):
+            print(f"After rotating {name} by {-self.current_angles['base']}° to the x-z plane we expected y to be 0 but it was {y}!")
+
+        return arr(x, z)
+
     def fabrik(self, target: ndarray, acceptable_distance=.1):
         """
         Uses the FABRIK algorithm to determine an angle configuration that would move the end effector
@@ -180,45 +238,8 @@ class Braccio:
         required_base_angle = -np.rad2deg((np.sign(base_to_target[1])) * np.arccos(
             -base_to_target[0] / np.sqrt((base_to_target[0] ** 2) + (base_to_target[1] ** 2))))
 
-        def rotate_around_base(p, angle):
-            """Rotates point around the base CLOCK WISE for the purpose of bringing the point into the x-z plane."""
-            moved_to_origin = trans(-self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ trans(*p)
-            rotated = rot('z', angle) @ moved_to_origin
-            moved_back = trans(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ rotated
-            moved_back = get_coords_from_matrix(moved_back)
-
-            # we only rotate around z so the x should now be the previous hypotenuse in the x-y
-            # and y should be 0. z should not have moved.
-            [x, y, z] = (moved_back - self.current_points['base'])
-            [xp, yp, zp] = (p - self.current_points['base'])
-            hyp = np.sqrt(xp ** 2 + yp ** 2) * np.sign(xp)
-            if not np.isclose(hyp, x):
-                print(f"After rotation, the point was expected to have the x of the prev. hypotenuse {hyp} but has {x} instead.")
-
-            if not np.isclose(y, 0):
-                print(f"After rotation, the point was expected to be on the x-z plane (y=0) but has y={y}")
-
-            if not np.isclose(z, zp):
-                print(f"After rotation, the point was expected to have kept its z position but it changed from {zp} to {z}")
-
-            return moved_back
-
-        def p(name):
-            # the base angle is clock wise and the rotate_around_base method rotates the point clock wise.
-            # since we want to move the point "back" and compensate the base-rotation, we negate it so it
-            # a counter clock wise rotation which nullifies the current clock wise rotation
-            angle_needed_to_move_arm_to_x_z_plane = -self.current_angles['base']
-            rotated = rotate_around_base(self.current_points[name], angle_needed_to_move_arm_to_x_z_plane)
-            [x, y, z] = rotated
-            if not np.isclose(0, y):
-                print(f"After rotating {name} by {-self.current_angles['base']}° to the x-z plane we expected y to be 0 but it was {y}!")
-
-            return arr(x, z)
-
         l = lambda name: self.JOINT_LENGTHS[name]
-        [x, _, z] = self.current_points['base']  # no need to rotate base around itself, pointless
-
-        points = [arr(x, z), p('shoulder'), p('elbow'), p('wrist_tilt'), p('grip')]
+        points = list(self._get_rotated_points_on_x_z().values())
         lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
 
         # sanity check
@@ -234,7 +255,7 @@ class Braccio:
         # also rotate target onto the x-z plane
         # instead of moving the arm to the target (arm clock wise rotation around base) we want to move the target
         # to the x-z plane (target counter clock wise rotation around base) therefore we negate the angle.
-        target = rotate_around_base(target, -required_base_angle)
+        target = self._rotate_around_base_to_x_z(target, -required_base_angle)
 
         distance_base_to_target_after = vlen(target - self.current_points['base'])
 
@@ -249,6 +270,7 @@ class Braccio:
 
         kinematics.fabrik(points, lengths, target, acceptable_distance=acceptable_distance)
         points = {
+            'base': points[0],
             'shoulder': points[1],
             'elbow': points[2],
             'wrist_tilt': points[3],
