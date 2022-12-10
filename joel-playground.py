@@ -7,7 +7,7 @@ import serial
 from braccio import Braccio
 from kinematics import arr
 import random
-
+import numpy as np
 
 def test_angle_conversions(b: Braccio):
     for i in range(10000):
@@ -21,10 +21,12 @@ def test_angle_conversions(b: Braccio):
         b.send(**angles)
         calc_angles = b.get_calculated_angles()
         input_printed = False
+        # print("Input: ", angles)
+        # print("Output: ", calc_angles)
         for k, v in calc_angles.items():
-            expected = round(angles[k])
-            actual = round(v)
-            if actual != expected:
+            expected = angles[k]
+            actual = v
+            if not np.isclose(actual, expected):
                 if not input_printed:
                     print("Input: ", angles)
                     print("Output: ", calc_angles)
@@ -61,6 +63,8 @@ if __name__ == '__main__':
     port = serial.serial_for_url("loop://", timeout=.1)  # testing
     with Braccio(port) as b:
         # time.sleep(5)  # important
+
+        # test_angle_conversions(b)
 
         # testCase = {'base': 90, 'shoulder': 82, 'elbow': 66, 'wrist_tilt': -84}
         # b.send(**testCase)
