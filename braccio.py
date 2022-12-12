@@ -33,10 +33,10 @@ class Braccio:
     }
 
     ANGLE_CORRECTIONS = {
-        'base': 90,
+        'base': 90 + 3,
         'shoulder': 90,
         'elbow': 90,
-        'wrist_tilt': 90 + 5,
+        'wrist_tilt': 90 + 3,
         'wrist_rotate': 90
     }
 
@@ -336,6 +336,18 @@ class Braccio:
                 correction = self.ANGLE_CORRECTIONS.get(key)
                 if correction:
                     value += correction
+
+                # this is just a rudimentary limit implementation, the actual limits of the joints are individual
+                # e.g. shoulder has 15-165 not 0-180. 0-180 is for elbow, and wrist_tilt
+                # unfortunately because we're using unconstrained fabrik some impossible angles might be created.
+                # next time we'd use an algorithm that can be constrained or figure out some way to manually adjust
+                # the angles, so they work (basically a more sophisticated version of this here).
+                if value < 0:
+                    print(f"NEGATIVE ALERT: Tried to send {value} for {key}, corrected to 0.")
+                    value = 0
+                if value > 180:
+                    print(f"> 180 ALERT: Tried to send {value} for {key}, corrected to 180.")
+                    value = 180
 
                 payload += f'{int(value)} '
                 payload += f'{self.KEY_MAPPINGS[key]} '

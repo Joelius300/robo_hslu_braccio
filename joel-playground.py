@@ -2,12 +2,11 @@ import random
 import time
 from io import RawIOBase
 
-import serial
+import numpy as np
 
 from braccio import Braccio
 from kinematics import arr
-import random
-import numpy as np
+
 
 def test_angle_conversions(b: Braccio):
     for i in range(10000):
@@ -58,45 +57,57 @@ def hard_coded_pick_and_place(b: Braccio):
     b.send(grip=100)
 
 
+def send_fabrik(b: Braccio, position, grip=None):
+    print("Sending position", position)
+    angles = b.fabrik(position)
+    if grip:
+        angles.update(grip=grip)
+    print("With angles", angles)
+    b.send(**angles)
+
+
+# corner to corner
+def pick_n_place(braccio: Braccio):
+    a = arr(5, -165, 30)
+    b = arr(-10, 0, 300)
+    c = arr(15, 155, 25)
+
+    send_fabrik(braccio, a, grip=60)
+    time.sleep(5)
+    braccio.send(grip=0)
+    time.sleep(1)
+    send_fabrik(braccio, a + arr(0, 0, 100))
+    time.sleep(1)
+    send_fabrik(braccio, b)
+    time.sleep(2)
+    braccio.send(wrist_rotate=70)
+    time.sleep(1.5)
+    braccio.send(wrist_rotate=-70)
+    time.sleep(1.5)
+    braccio.send(wrist_rotate=0)
+    time.sleep(1)
+    send_fabrik(braccio, c)
+    time.sleep(3)
+    braccio.send(grip=100)
+    time.sleep(2)
+    send_fabrik(braccio, c + arr(0, 0, 100))
+    time.sleep(2)
+    braccio.reset_position()
+
+
 if __name__ == '__main__':
     port = "/dev/ttyACM0"
-    port = serial.serial_for_url("loop://", timeout=.1)  # testing
+    # port = serial.serial_for_url("loop://", timeout=.1)  # testing
     with Braccio(port) as b:
-        # time.sleep(5)  # important
+        time.sleep(5)  # important
 
-        # test_angle_conversions(b)
+        try:
+            pick_n_place(b)
 
-        # testCase = {'base': 90, 'shoulder': 82, 'elbow': 66, 'wrist_tilt': -84}
-        # b.send(**testCase)
-        b.send(base=-72, shoulder=-30, elbow=15, wrist_tilt=10)
-        # print("Input angles")
-        # print(b.current_angles)
-        # print("Recalculated angles")
-        # print(b.get_calculated_angles())
-
-        print("Testing FABRIK")
-        # it somehow goes too low with this..
-        target = arr(109, -5, 44)
-        # target = arr(50, -50, 200)
-        print("Target:", target)
-        print("Current position")
-        print(b.current_points)
-        angles = b.fabrik(target)
-        print("FABRIK angles")
-        print(angles)
-        b.send(**angles)
-        print("Input angles")
-        print(b.current_angles)
-        # print("Recalculated angles")
-        # print(b.get_calculated_angles())
-        print(f"Current points (grip should be at {target})")
-        print(b.current_points)
-
-        # Okay we vorhär d Position reset isch de isch stimmt z target mit FABRIK
-
-        if isinstance(port, RawIOBase):
-            print("Dumping received data on port:")
-            # print(port.readall().decode('ASCII'))
-        else:
-            time.sleep(10)
-            b.reset_position()
+            input("Press enter to reset..")
+        finally:
+            if isinstance(port, RawIOBase):
+                print("Dumping received data on port:")
+                # print(port.readall().decode('ASCII'))
+            else:
+                b.reset_position()
