@@ -3,11 +3,13 @@ import time
 from io import RawIOBase
 
 import serial
+from pynput.keyboard import Key, KeyCode
 
 from braccio import Braccio
 from kinematics import arr
 import random
 import numpy as np
+from pynput import keyboard
 
 def test_angle_conversions(b: Braccio):
     for i in range(10000):
@@ -58,45 +60,78 @@ def hard_coded_pick_and_place(b: Braccio):
     b.send(grip=100)
 
 
+def wasd(b: Braccio):
+    position = b.get_end_point()
+    max_send_interval = 5
+    last_send = [-1]
+    should_end = [False]
+    move_step = 5
+    print("Starting controller from", position)
+
+    def on_press(key: Key | KeyCode) -> bool | None:
+        if key == KeyCode.from_char('x'):
+            should_end[0] = True
+            return False
+
+        if key == KeyCode.from_char('w'):
+            position[0] += move_step
+        elif key == KeyCode.from_char('s'):
+            position[0] -= move_step
+        elif key == KeyCode.from_char('d'):
+            position[1] += move_step
+        elif key == KeyCode.from_char('a'):
+            position[1] -= move_step
+        elif key == Key.space:
+            position[2] += move_step
+        elif key == Key.shift:
+            position[2] -= move_step
+        else:
+            return True
+
+        print("Position now:", position)
+        return True
+
+        now = time.time()
+        if last_send[0] + max_send_interval <= now:
+            # print("Sending position", position)
+            b.send(**b.fabrik(position))
+            last_send[0] = now
+        else:
+            print(f"Cannot send, only {now - last_send[0]} seconds passed since last send.")
+
+    with keyboard.Listener(on_press=on_press) as listener:
+        last_position = position.copy()
+        while not should_end[0]:
+            time.sleep(max_send_interval)
+            pos = position.copy()
+            if last_position is None or not np.allclose(pos, last_position):
+                print("Sending position", pos)
+                angles = b.fabrik(pos)
+                print("Sending angles", angles)
+                b.send(**angles)
+                last_position = pos
+
+
 if __name__ == '__main__':
     port = "/dev/ttyACM0"
-    port = serial.serial_for_url("loop://", timeout=.1)  # testing
+    # port = serial.serial_for_url("loop://", timeout=.1)  # testing
     with Braccio(port) as b:
-        # time.sleep(5)  # important
+        time.sleep(5)  # important
 
-        # test_angle_conversions(b)
-
-        # testCase = {'base': 90, 'shoulder': 82, 'elbow': 66, 'wrist_tilt': -84}
-        # b.send(**testCase)
-        b.send(base=-72, shoulder=-30, elbow=15, wrist_tilt=10)
-        # print("Input angles")
-        # print(b.current_angles)
-        # print("Recalculated angles")
-        # print(b.get_calculated_angles())
-
-        print("Testing FABRIK")
-        # it somehow goes too low with this..
-        target = arr(109, -5, 44)
-        # target = arr(50, -50, 200)
-        print("Target:", target)
-        print("Current position")
-        print(b.current_points)
-        angles = b.fabrik(target)
-        print("FABRIK angles")
-        print(angles)
-        b.send(**angles)
-        print("Input angles")
-        print(b.current_angles)
-        # print("Recalculated angles")
-        # print(b.get_calculated_angles())
-        print(f"Current points (grip should be at {target})")
-        print(b.current_points)
-
-        # Okay we vorhär d Position reset isch de isch stimmt z target mit FABRIK
-
-        if isinstance(port, RawIOBase):
-            print("Dumping received data on port:")
-            # print(port.readall().decode('ASCII'))
-        else:
-            time.sleep(10)
+        try:
+            wasd(b)
+        finally:
             b.reset_position()
+
+        # target = arr(40, 100, 50)
+        # angles = b.fabrik(target)
+        # print("Calculated angles from FABRIK")
+        # print(angles)
+        # b.send(**angles)
+
+        # if isinstance(port, RawIOBase):
+        #     print("Dumping received data on port:")
+        #     # print(port.readall().decode('ASCII'))
+        # else:
+        #     time.sleep(15)
+        #     b.reset_position()
