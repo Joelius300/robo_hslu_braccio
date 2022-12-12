@@ -122,9 +122,9 @@ class Braccio:
         m6 = rot('z', self.current_angles['wrist_rotate']) @ trans(z=self.JOINT_LENGTHS['grip'])  # wrist_rotate to grip
 
         M = m1
-        self.current_points['base'] = get_coords_from_matrix(M)
+        self.current_points['base'] = get_coords_from_matrix(M)  # base will always be at the same position
         M = M @ m2
-        self.current_points['shoulder'] = get_coords_from_matrix(M)
+        self.current_points['shoulder'] = get_coords_from_matrix(M)  # shoulder will always be at the same position (may be rotated in z but that doesn't change position)
         M = M @ m3
         self.current_points['elbow'] = get_coords_from_matrix(M)
         M = M @ m4
@@ -139,6 +139,8 @@ class Braccio:
 
     def _get_angles_from_points2d(self, points: dict[str, ndarray]):
         angles = {}
+
+        # no base to shoulder because base to shoulder is not a movable joint!
 
         shoulder_to_elbow = points['elbow'] - points['shoulder']
         angles['shoulder'] = -np.rad2deg(angle_between2d(arr(0, 1), shoulder_to_elbow))  # left handed -> negative
@@ -163,7 +165,7 @@ class Braccio:
         [x, _, z] = self.current_points['base']  # no need to rotate base around itself, pointless
         points = {
             'base': arr(x, z),
-            'shoulder': self._get_point_on_x_z('shoulder'),
+            'shoulder': self._get_point_on_x_z('shoulder'),  # THIS CAN'T CHANGE EITHER!!! dumbass
             'elbow': self._get_point_on_x_z('elbow'),
             'wrist_tilt': self._get_point_on_x_z('wrist_tilt'),
             'grip': self._get_point_on_x_z('grip')
@@ -181,13 +183,17 @@ class Braccio:
         moved_back = trans(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0, 0) @ rotated
         moved_back = get_coords_from_matrix(moved_back)
 
-        # we only rotate around z so the x should now be the previous hypotenuse in the x-y
-        # and y should be 0. z should not have moved.
-        [x, y, z] = (moved_back - self.current_points['base'])
-        [xp, yp, zp] = (p - self.current_points['base'])
-        hyp = np.sqrt(xp ** 2 + yp ** 2) * np.sign(xp)
-        if not np.isclose(hyp, x):
-            print(f"After rotation, the point was expected to have the x of the prev. hypotenuse {hyp} but has {x} instead.")
+        # we only rotate around z so the length should have remained the same.
+        # y should be 0. z should not have moved.
+        base_to_after = (moved_back - self.current_points['base'])
+        base_to_before = (p - self.current_points['base'])
+        [_, y, z] = base_to_after
+        [_, _, zp] = base_to_before
+
+        expected_len = vlen(base_to_before)
+        actual_len = vlen(base_to_after)
+        if not np.isclose(expected_len, actual_len):
+            print(f"After rotation, the distance from base to the point was expected to remain {expected_len} but was {actual_len} instead.")
 
         if not np.isclose(y, 0):
             print(f"After rotation, the point was expected to be on the x-z plane (y=0) but has y={y}")
@@ -247,8 +253,8 @@ class Braccio:
             -base_to_target[0] / np.sqrt((base_to_target[0] ** 2) + (base_to_target[1] ** 2))))
 
         l = lambda name: self.JOINT_LENGTHS[name]
-        points = list(self._get_rotated_points_on_x_z().values())
-        lengths = [l('shoulder'), l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
+        points = list(self._get_rotated_points_on_x_z().values())[1:]  # base to shoulder isn't a movable joint, so anchor is shoulder
+        lengths = [l('elbow'), l('wrist_tilt'), l('wrist_rotate') + l('grip')]
 
         # sanity check
         # we are rotating, not projecting, so the distances should be the same (they also need to be for FABRIK)!
@@ -278,11 +284,10 @@ class Braccio:
 
         kinematics.fabrik(points, lengths, target, acceptable_distance=acceptable_distance)
         points = {
-            'base': points[0],
-            'shoulder': points[1],
-            'elbow': points[2],
-            'wrist_tilt': points[3],
-            'grip': points[4],
+            'shoulder': points[0],
+            'elbow': points[1],
+            'wrist_tilt': points[2],
+            'grip': points[3],
         }
 
         print("FABRIK points")
@@ -297,15 +302,6 @@ class Braccio:
 
     def _ensure_fabrik_makes_sense(self, points):
         # this code is fucking disgusting but who cares at this point
-        # TODO also assert positions, not just lengths, or is that redundant?
-        if not np.allclose(points['base'], arr(self.DISTANCE_FROM_OUR_ORIGIN_TO_BASE, 0)):
-            print(f"Base not where we expect but {points['base']}")
-
-        base_to_shoulder = points['shoulder'] - points['base']
-        base_to_shoulder_len = vlen(base_to_shoulder)
-        if not np.isclose(base_to_shoulder_len, self.JOINT_LENGTHS['shoulder']):
-            print(f"Base to shoulder length unexpected: {base_to_shoulder_len} instead of {self.JOINT_LENGTHS['shoulder']}")
-
         shoulder_to_elbow = points['elbow'] - points['shoulder']
         shoulder_to_elbow_len = vlen(shoulder_to_elbow)
         if not np.isclose(shoulder_to_elbow_len, self.JOINT_LENGTHS['elbow']):
